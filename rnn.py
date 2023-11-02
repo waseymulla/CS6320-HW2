@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 import torch.optim as optim
+import torchtext
 import math
 import random
 import os
@@ -17,10 +18,12 @@ unk = '<UNK>'
 # Consult the PyTorch documentation for information on the functions used below:
 # https://pytorch.org/docs/stable/torch.html
 class RNN(nn.Module):
-    def __init__(self, input_dim, h):  # Add relevant parameters
+    def __init__(self, input_dim, h, pretrained_embeddings):  # Add relevant parameters
         super(RNN, self).__init__()
         self.h = h
         self.numOfLayer = 1
+        #Option 1 embedding
+        self.embedding = nn.Embedding.from_pretrained(pretrained_embeddings, freeze=True)
         self.rnn = nn.RNN(input_dim, h, self.numOfLayer, nonlinearity='tanh')
         self.W = nn.Linear(h, 5)
         self.softmax = nn.LogSoftmax(dim=1)
@@ -31,12 +34,20 @@ class RNN(nn.Module):
 
     def forward(self, inputs):
         # [to fill] obtain hidden layer representation (https://pytorch.org/docs/stable/generated/torch.nn.RNN.html)
-        _, hidden = 
+
+        #retreive word embeddings from inputs
+        embedded_info = self.embedding(inputs)
+        
+        #recieve the hidden layer representaion of the  rnn
+        #rnn_output,hidden_layer = self.rnn(embedded_info)
+        rnn_output = self.rnn(embedded_info)
         # [to fill] obtain output layer representations
+        output = self.W(rnn_output)
 
         # [to fill] sum over output 
-
+        sum_of_output = torch(output, dim = 0)
         # [to fill] obtain probability dist.
+        predicted_vector = self.softmax(sum_of_output)
 
         return predicted_vector
 
@@ -77,7 +88,9 @@ if __name__ == "__main__":
     # Option 3 will be the most time consuming, so we do not recommend starting with this
 
     print("========== Vectorizing data ==========")
-    model = RNN(50, args.hidden_dim)  # Fill in parameters
+    # Load GloVe embeddings
+    glove_embeddings = torchtext.vocab.GloVe(name='6B', dim=50)
+    model = RNN(50, args.hidden_dim, glove_embeddings.vectors)  # Fill in parameters
     # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     word_embedding = pickle.load(open('./word_embedding.pkl', 'rb'))
