@@ -218,8 +218,7 @@ if __name__ == "__main__":
         print(f"{hidden_dim:^10} | {best_train_loss:.6f} | {best_dev_accuracy:.2%}")
 
     # Plot learning curves for the best-performing model
-    best_hidden_dim, _, _ = max(results, key=lambda x: max(x[2]))
-    best_training_losses, best_validation_accuracies = train_and_evaluate_model(best_hidden_dim, args.epochs, train_data, valid_data)
+    best_hidden_dim, best_training_losses, best_validation_accuracies = max(results, key=lambda x: max(x[2]))
 
     # Plot learning curve
     plt.figure(figsize=(10, 5))
@@ -239,3 +238,4 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.show()
+    plt.savefig('ffnn-val.png')
