@@ -80,20 +80,25 @@ def convert_to_vector_representation(data, word2index):
 
 
 
-def load_data(train_data, val_data):
+def load_data(train_data, val_data, test_data):
     with open(train_data) as training_f:
         training = json.load(training_f)
     with open(val_data) as valid_f:
         validation = json.load(valid_f)
+    with open(test_data) as test_f:
+        test = json.load(test_f)
 
     tra = []
     val = []
+    tst = []
     for elt in training:
         tra.append((elt["text"].split(),int(elt["stars"]-1)))
     for elt in validation:
         val.append((elt["text"].split(),int(elt["stars"]-1)))
+    for elt in test:
+        tst.append((elt["text"].split(),int(elt["stars"]-1)))
 
-    return tra, val
+    return tra, val, tst
 
 def train_and_evaluate_model(hidden_dim, epochs, train_data, valid_data):
     model = FFNN(input_dim=len(vocab), h=hidden_dim)
@@ -172,7 +177,32 @@ def train_and_evaluate_model(hidden_dim, epochs, train_data, valid_data):
         print(f"Validation accuracy for epoch {epoch + 1}: {validation_accuracy:.2%}")
         print(f"Validation time for this epoch: {time.time() - start_time}")
 
-    return training_losses, validation_accuracies
+    return model, training_losses, validation_accuracies
+
+def evaluate_model_for_test(model, test_data):
+    model.eval()
+
+    correct = 0
+    total = 0
+    print(f"Evaluation started for test data")
+    minibatch_size = 16
+    N = len(test_data)
+
+    for minibatch_index in tqdm(range(N // minibatch_size)):
+        for example_index in range(minibatch_size):
+            input_vector, gold_label = test_data[minibatch_index * minibatch_size + example_index]
+            predicted_vector = model(input_vector)
+            predicted_label = torch.argmax(predicted_vector)
+            correct += int(predicted_label == gold_label)
+            total += 1
+
+    # Record the test_accuracy
+    test_accuracy = correct / total
+
+    print(f"Test data evaluation completed")
+    print(f"Test data accuracy: {test_accuracy:.2%}")
+
+    return test_accuracy
 
 
 if __name__ == "__main__":
@@ -191,34 +221,32 @@ if __name__ == "__main__":
 
     # load data
     print("========== Loading data ==========")
-    train_data, valid_data = load_data(args.train_data, args.val_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
+    train_data, valid_data, test_data = load_data(args.train_data, args.val_data, args.test_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
     vocab = make_vocab(train_data)
     vocab, word2index, index2word = make_indices(vocab)
 
     print("========== Vectorizing data ==========")
     train_data = convert_to_vector_representation(train_data, word2index)
     valid_data = convert_to_vector_representation(valid_data, word2index)
+    test_data = convert_to_vector_representation(test_data, word2index)
     
-    hidden_dims = [32, 64, 128]  # You can change these hidden unit sizes
+    hidden_dims = [16, 32, 64, 128]  # You can change these hidden unit sizes
     results = []
 
     for hidden_dim in hidden_dims:
-        training_losses, validation_accuracies = train_and_evaluate_model(hidden_dim, args.epochs, train_data, valid_data)
-        results.append((hidden_dim, training_losses, validation_accuracies))
+        curr_model, training_losses, validation_accuracies = train_and_evaluate_model(hidden_dim, args.epochs, train_data, valid_data)
+        test_accuracy = evaluate_model_for_test(curr_model, test_data)
+        results.append((hidden_dim, training_losses, validation_accuracies, test_accuracy))
 
-
-
-        # Summarize the results
-    print("Hidden Dim | Best Train Loss | Best Dev Accuracy")
-    best_dev_accuracy = 0
-    best_hidden_dim = 0
-    for hidden_dim, training_losses, validation_accuracies in results:
+    # Summarize the results
+    print("Hidden Dim | Best Train Loss | Best Dev Accuracy | Test Accuracy")
+    for hidden_dim, training_losses, validation_accuracies, test_accuracy in results:
         best_train_loss = min(training_losses)
         best_dev_accuracy = max(validation_accuracies)
-        print(f"{hidden_dim:^10} | {best_train_loss:.6f} | {best_dev_accuracy:.2%}")
+        print(f"{hidden_dim:^10} | {best_train_loss:^15.6f} | {best_dev_accuracy:^17.2%} | {test_accuracy:^13.2%}")
 
-    # Plot learning curves for the best-performing model
-    best_hidden_dim, best_training_losses, best_validation_accuracies = max(results, key=lambda x: max(x[2]))
+    # Plot learning curves for the best-performing model -> based on accuracy
+    best_hidden_dim, best_training_losses, best_validation_accuracies, test_accuracy_of_best_model = max(results, key=lambda x: max(x[2]))
 
     # Plot learning curve
     plt.figure(figsize=(10, 5))
@@ -239,3 +267,4 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
     plt.savefig('ffnn-val.png')
+
