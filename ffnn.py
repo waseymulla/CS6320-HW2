@@ -2,9 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import math
 import random
-import os
 import time
 from tqdm import tqdm
 import json
@@ -31,11 +29,8 @@ class FFNN(nn.Module):
         return self.loss(predicted_vector, gold_label)
 
     def forward(self, input_vector):
-        # [to fill] obtain first hidden layer representation
         hidden_rep = self.activation(self.W1(input_vector))
-        # [to fill] obtain output layer representation
         output_rep = self.W2(hidden_rep)
-        # [to fill] obtain probability dist.
         predicted_vector = self.softmax(output_rep)
         return predicted_vector
 
@@ -107,6 +102,7 @@ def train_and_evaluate_model(hidden_dim, epochs, train_data, valid_data):
 
     training_losses = []  # Store training loss for each epoch
     validation_accuracies = []  # Store validation accuracy for each epoch
+    testing_accs = []
 
     for epoch in range(epochs):
         model.train()
@@ -177,33 +173,31 @@ def train_and_evaluate_model(hidden_dim, epochs, train_data, valid_data):
         print(f"Validation accuracy for epoch {epoch + 1}: {validation_accuracy:.2%}")
         print(f"Validation time for this epoch: {time.time() - start_time}")
 
-    return model, training_losses, validation_accuracies
+        model.eval()
 
-def evaluate_model_for_test(model, test_data):
-    model.eval()
+        correct = 0
+        total = 0
+        print(f"Evaluation started for test data")
+        minibatch_size = 16
+        N = len(test_data)
 
-    correct = 0
-    total = 0
-    print(f"Evaluation started for test data")
-    minibatch_size = 16
-    N = len(test_data)
+        for minibatch_index in tqdm(range(N // minibatch_size)):
+            for example_index in range(minibatch_size):
+                input_vector, gold_label = test_data[minibatch_index * minibatch_size + example_index]
+                predicted_vector = model(input_vector)
+                predicted_label = torch.argmax(predicted_vector)
+                correct += int(predicted_label == gold_label)
+                total += 1
 
-    for minibatch_index in tqdm(range(N // minibatch_size)):
-        for example_index in range(minibatch_size):
-            input_vector, gold_label = test_data[minibatch_index * minibatch_size + example_index]
-            predicted_vector = model(input_vector)
-            predicted_label = torch.argmax(predicted_vector)
-            correct += int(predicted_label == gold_label)
-            total += 1
+        # Record the test_accuracy
+        test_accuracy = correct / total
 
-    # Record the test_accuracy
-    test_accuracy = correct / total
+        print(f"Test data evaluation completed")
+        print(f"Test data accuracy: {test_accuracy:.2%}")
+        testing_accs.append(test_accuracy)
 
-    print(f"Test data evaluation completed")
-    print(f"Test data accuracy: {test_accuracy:.2%}")
-
-    return test_accuracy
-
+    # return training_losses, validation_accuracies, test_accuracy
+    return training_losses, validation_accuracies, testing_accs
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -230,41 +224,46 @@ if __name__ == "__main__":
     valid_data = convert_to_vector_representation(valid_data, word2index)
     test_data = convert_to_vector_representation(test_data, word2index)
     
-    hidden_dims = [16, 32, 64, 128]  # You can change these hidden unit sizes
+    hidden_dims = [16, 32, 64, ]  # You can change these hidden unit sizes
     results = []
 
     for hidden_dim in hidden_dims:
-        curr_model, training_losses, validation_accuracies = train_and_evaluate_model(hidden_dim, args.epochs, train_data, valid_data)
-        test_accuracy = evaluate_model_for_test(curr_model, test_data)
+        training_losses, validation_accuracies, test_accuracy = train_and_evaluate_model(hidden_dim, args.epochs, train_data, valid_data)
         results.append((hidden_dim, training_losses, validation_accuracies, test_accuracy))
 
     # Summarize the results
     print("Hidden Dim | Best Train Loss | Best Dev Accuracy | Test Accuracy")
-    for hidden_dim, training_losses, validation_accuracies, test_accuracy in results:
+    for hidden_dim, training_losses, validation_accuracies, test_accuracy1 in results:
         best_train_loss = min(training_losses)
         best_dev_accuracy = max(validation_accuracies)
+        test_accuracy = test_accuracy1[-1]
         print(f"{hidden_dim:^10} | {best_train_loss:^15.6f} | {best_dev_accuracy:^17.2%} | {test_accuracy:^13.2%}")
+
+    # to analyse
+    for hidden_dim, training_losses, validation_accuracies, test_accuracy1 in results:
+        print(f'{hidden_dim} : train: ', training_losses)
+        print('validation: ', validation_accuracies)
+        print('test', test_accuracy1)
 
     # Plot learning curves for the best-performing model -> based on accuracy
     best_hidden_dim, best_training_losses, best_validation_accuracies, test_accuracy_of_best_model = max(results, key=lambda x: max(x[2]))
 
     # Plot learning curve
     plt.figure(figsize=(10, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(range(1, args.epochs + 1), best_training_losses, label="Training Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.title("Training Loss")
+    fig, ax1 = plt.subplots()
+    # plt.subplot(1, 2, 1)
+    ax2 = ax1.twinx()
+    ax1.plot(range(1, args.epochs + 1), best_training_losses, 'b-', label="Training Loss")
+    # plt.plot(range(1, args.epochs + 1), best_training_losses, label="Training Loss")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Training Loss", color = 'b')
+    ax2.set_ylabel("Validation Accuracy", color='g')
+    ax1.set_xticks(range(1, args.epochs + 1, 2))
+    ax2.plot(range(1, args.epochs + 1), best_validation_accuracies, 'g-', label="Validation Accuracy")
 
-    plt.subplot(1, 2, 2)
-    plt.plot(range(1, args.epochs + 1), best_validation_accuracies, label="Validation Accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.legend()
-    plt.title("Validation Accuracy")
-
+    # plt.legend()
+    plt.title(f"FFNN Analysis - Hidden Layer Dimension: {best_hidden_dim}")
     plt.tight_layout()
     plt.show()
-    plt.savefig('ffnn-val.png')
+    plt.savefig('ffnn-val-fin-hid-3.png')
 
