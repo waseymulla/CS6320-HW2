@@ -246,7 +246,7 @@ if __name__ == "__main__":
         print('test', test_accuracy1)
 
     # Plot learning curves for the best-performing model -> based on accuracy
-    best_hidden_dim, best_training_losses, best_validation_accuracies, test_accuracy_of_best_model = max(results, key=lambda x: max(x[2]))
+    best_hidden_dim, best_training_losses, best_validation_accuracies, test_accuracy_of_best_model = max(results, key=lambda x: x[-2][-1])
 
     # Plot learning curve
     plt.figure(figsize=(10, 5))
@@ -265,5 +265,5 @@ if __name__ == "__main__":
     plt.title(f"FFNN Analysis - Hidden Layer Dimension: {best_hidden_dim}")
     plt.tight_layout()
     plt.show()
-    plt.savefig('ffnn-val-fin-hid-3.png')
+    plt.savefig('ffnn-final.png')
 
