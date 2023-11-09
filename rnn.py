@@ -12,6 +12,7 @@ import json
 import string
 from argparse import ArgumentParser
 import pickle
+import matplotlib.pyplot as plt
 
 unk = '<UNK>'
 # Consult the PyTorch documentation for information on the functions used below:
@@ -76,22 +77,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("========== Loading data ==========")
-    train_data, valid_data, test_data = load_data(args.train_data, args.val_data, args.test_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
-
-    # Think about the type of function that an RNN describes. To apply it, you will need to convert the text data into vector representations.
-    # Further, think about where the vectors will come from. There are 3 reasonable choices:
-    # 1) Randomly assign the input to vectors and learn better embeddings during training; see the PyTorch documentation for guidance
-    # 2) Assign the input to vectors using pretrained word embeddings. We recommend any of {Word2Vec, GloVe, FastText}. Then, you do not train/update these embeddings.
-    # 3) You do the same as 2) but you train (this is called fine-tuning) the pretrained embeddings further.
-    # Option 3 will be the most time consuming, so we do not recommend starting with this
-
+    train_data, valid_data, test_data = load_data(args.train_data, args.val_data, args.test_data)
     print("========== Vectorizing data ==========")
-    # model = RNN(50, args.hidden_dim)  # Fill in parameters
-    # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-
     word_embedding = pickle.load(open('./word_embedding.pkl', 'rb'))
 
-    hidden_dims = [16, 32, 64, 128]  # You can change these hidden unit sizes
+    hidden_dims = [16, 32, 64,]
     results = []
 
     for dim in hidden_dims:
@@ -102,13 +92,17 @@ if __name__ == "__main__":
         last_train_accuracy = 0
         last_validation_accuracy = 0
         test_accuracy = 0
+        
+        # Initialize lists to store training loss and validation accuracy
+        train_losses = []
+        val_accuracies = []
 
         model = RNN(50, dim)
         optimizer = optim.Adam(model.parameters(), lr=0.01)
         while not stopping_condition:
             random.shuffle(train_data)
             model.train()
-            # You will need further code to operationalize training, ffnn.py may be helpful
+
             print("Training started for epoch {}".format(epoch + 1))
             train_data = train_data
             correct = 0
@@ -129,20 +123,16 @@ if __name__ == "__main__":
                     input_words = input_words.translate(input_words.maketrans("", "", string.punctuation)).split()
 
                     # Look up word embedding dictionary
-                    vectors = [word_embedding[i.lower()] if i.lower() in word_embedding.keys() else word_embedding['unk'] for i in input_words ]
+                    vectors = [word_embedding[i.lower()] if i.lower() in word_embedding.keys() else word_embedding['unk'] for i in input_words]
 
-                    # Transform the input into required shape
                     vectors = torch.tensor(vectors).view(len(vectors), 1, -1)
                     output = model(vectors)
 
-                    # Get loss
-                    example_loss = model.compute_Loss(output.view(1,-1), torch.tensor([gold_label]))
+                    example_loss = model.compute_Loss(output.view(1, -1), torch.tensor([gold_label]))
 
-                    # Get predicted label
                     predicted_label = torch.argmax(output)
 
                     correct += int(predicted_label == gold_label)
-                    # print(predicted_label, gold_label)
                     total += 1
                     if loss is None:
                         loss = example_loss
@@ -154,11 +144,11 @@ if __name__ == "__main__":
                 loss_count += 1
                 loss.backward()
                 optimizer.step()
-            print(loss_total/loss_count)
+            print(loss_total / loss_count)
+            train_losses.append(loss_total / loss_count)
             print("Training completed for epoch {}".format(epoch + 1))
             print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
-            training_accuracy = correct/total
-
+            training_accuracy = correct / total
 
             model.eval()
             correct = 0
@@ -170,21 +160,20 @@ if __name__ == "__main__":
             for input_words, gold_label in tqdm(valid_data):
                 input_words = " ".join(input_words)
                 input_words = input_words.translate(input_words.maketrans("", "", string.punctuation)).split()
-                vectors = [word_embedding[i.lower()] if i.lower() in word_embedding.keys() else word_embedding['unk'] for i
-                        in input_words]
+                vectors = [word_embedding[i.lower()] if i.lower in word_embedding.keys() else word_embedding['unk'] for i in input_words]
 
                 vectors = torch.tensor(vectors).view(len(vectors), 1, -1)
                 output = model(vectors)
                 predicted_label = torch.argmax(output)
                 correct += int(predicted_label == gold_label)
                 total += 1
-                # print(predicted_label, gold_label)
             print("Validation completed for epoch {}".format(epoch + 1))
             print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
-            validation_accuracy = correct/total
+            validation_accuracy = correct / total
+            val_accuracies.append(validation_accuracy)
 
-            if epoch > 7 and validation_accuracy < last_validation_accuracy and training_accuracy > last_train_accuracy:
-                stopping_condition=True
+            if (epoch > 6 and validation_accuracy < last_validation_accuracy and training_accuracy > last_train_accuracy) or epoch > 11:
+                stopping_condition = True
                 print("Training done to avoid overfitting!")
                 print("Best validation accuracy is:", last_validation_accuracy)
             else:
@@ -210,21 +199,40 @@ if __name__ == "__main__":
             predicted_label = torch.argmax(output)
             correct += int(predicted_label == gold_label)
             total += 1
-            print(predicted_label, gold_label)
+            # print(predicted_label, gold_label)
         print("Test data processing completed")
         print("Test accuracy: {}".format(correct / total))
         test_accuracy = correct/total
         
-        results.append((dim, epoch, last_train_accuracy, last_validation_accuracy, test_accuracy))
+        results.append((dim, epoch, train_losses, val_accuracies, test_accuracy))
 
 
     # Summarize the results
-    print("Hidden Dim | Epoch | Train Accuracy | Validation Accuracy | Test Accuracy")
-    for hidden_dim, epoch, training_acc, validation_accuracies, test_accuracy in results:
-        print(f"{hidden_dim:^10} | {epoch:^5} | {training_acc:^14.6f} | {validation_accuracies:^18.2%} | {test_accuracy:^15.2%}")
+    print("Hidden Dim | Epoch | Best Train Loss | Best Dev Accuracy | Test Accuracy")
+    for hidden_dim, epoch, training_losses, validation_accs, test_accuracy in results:
+        print(f"{hidden_dim:^10} | {epoch:^5} | {training_losses[-2]:^14.6f} | {validation_accs[-2]:^18.2%} | {test_accuracy:^15.2%}")
 
+    for hidden_dim, epoch, training_losses, validation_accuracies, test_accuracy1 in results:
+        print(f'{hidden_dim} : train: ', training_losses)
+        print('validation: ', validation_accuracies)
+        print('test', test_accuracy1)
 
+    # best is before last overfit
+    best_hidden_dim, epoch_of_best, best_training_losses, best_validation_accuracies, test_accuracy_of_best_model = max(results, key=lambda x: x[-2][-1])
 
-    # You may find it beneficial to keep track of training accuracy or training loss;
+    # Plot learning curve
+    plt.figure(figsize=(12, 6))
+    fig, ax1 = plt.subplots()
+    # plt.subplot(1, 2, 1)
+    ax2 = ax1.twinx()
+    ax1.plot(range(1, epoch_of_best + 1), best_training_losses, 'b-', label="Training Loss")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Training Loss", color = 'b')
+    ax2.set_ylabel("Validation Accuracy", color='g')
+    ax1.set_xticks(range(1, epoch_of_best + 1, 2))
+    ax2.plot(range(1, epoch_of_best + 1), best_validation_accuracies, 'g-', label="Validation Accuracy")
 
-    # Think about how to update the model and what this entails. Consider ffnn.py and the PyTorch documentation for guidance
+    plt.title(f"RNN Analysis - Hidden Layer Dimension: {best_hidden_dim}")
+    plt.tight_layout()
+    plt.show()
+    plt.savefig('rnn-val-fig.png')
